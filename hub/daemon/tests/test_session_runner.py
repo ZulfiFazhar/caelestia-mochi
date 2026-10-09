@@ -213,3 +213,37 @@ def test_edge_cases_and_error_handling():
     mgr.terminate_session(session_id)
     mgr.terminate_session(session_id)  # Idempotent call
 
+
+def test_approval_auto_timeout():
+    approvals_captured = []
+    # Configure 0.3s approval timeout
+    mgr = PtySessionManager(on_approval=lambda r: approvals_captured.append(r), approval_timeout=0.3)
+    script = (
+        "import sys\n"
+        "print('Timeout test: Approve? [y/N]: ', end='', flush=True)\n"
+        "ans = sys.stdin.readline().strip()\n"
+        "print(f'timeout_result: {ans}', flush=True)\n"
+    )
+    session_id = mgr.spawn_session([sys.executable, "-u", "-c", script])
+
+    deadline = time.time() + 3.0
+    while time.time() < deadline and not approvals_captured:
+        time.sleep(0.05)
+
+    assert len(approvals_captured) == 1
+    appr_id = approvals_captured[0]["approval_id"]
+
+    # Wait for timeout to fire (0.3s + small buffer)
+    time.sleep(0.5)
+
+    # Check that approval was resolved and denied
+    appr = mgr.get_approval(appr_id)
+    assert appr is not None
+    assert appr["resolved"] is True
+    assert appr["approved"] is False
+
+    # Check output from session: auto-deny sends 'n'
+    output = mgr.get_output(session_id)
+    assert "timeout_result: n" in output
+    mgr.terminate_session(session_id)
+

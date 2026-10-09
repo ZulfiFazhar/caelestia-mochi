@@ -5,7 +5,7 @@ import json
 import logging
 from typing import Any, Callable
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
@@ -19,6 +19,14 @@ logger = logging.getLogger(__name__)
 class ApprovalPayload(BaseModel):
     approved: bool = True
     reason: str = ""
+
+
+class SpawnSessionPayload(BaseModel):
+    command: list[str] | str
+
+
+class SessionInputPayload(BaseModel):
+    data: str
 
 
 class EventBroadcaster:
@@ -60,6 +68,9 @@ class EventBroadcaster:
 
     async def broadcast_approval_request(self, approval: dict[str, Any] | str) -> None:
         await self.broadcast("approval_request", approval)
+
+    async def broadcast_session_output(self, session_id: str, data: Any) -> None:
+        await self.broadcast("session_output", {"session_id": session_id, "data": data})
 
 
 monitor_service = AgentMonitorService()
@@ -148,3 +159,40 @@ async def submit_approval(
         except Exception as e:
             logger.warning(f"Error executing approval hook: {e}")
     return {"status": "recorded"}
+
+
+@router.post("/api/sessions")
+async def spawn_session(payload: SpawnSessionPayload) -> dict[str, Any]:
+    try:
+        session_id = session_manager.spawn_session(payload.command)
+        return {"session_id": session_id, "status": "spawned"}
+    except Exception as e:
+        logger.error(f"Failed to spawn session: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/sessions/{session_id}/input")
+async def send_session_input(session_id: str, payload: SessionInputPayload) -> dict[str, str]:
+    try:
+        session_manager.send_input(session_id, payload.data)
+        return {"status": "ok"}
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to send input to session {session_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/api/sessions")
+async def list_sessions() -> list[dict[str, Any]]:
+    return session_manager.list_sessions()
+
+
+@router.get("/api/sessions/{session_id}")
+async def get_session(session_id: str) -> dict[str, Any]:
+    session = session_manager.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+    return session

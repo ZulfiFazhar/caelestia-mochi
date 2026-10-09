@@ -51,6 +51,23 @@ curl http://localhost:8799/api/agents
 curl -N http://localhost:8799/api/events
 ```
 
+#### Authentication Token (Optional):
+
+To secure the daemon API, configure `MOCHI_AUTH_TOKEN`:
+
+```bash
+export MOCHI_AUTH_TOKEN="your-secret-token"
+uv run mochi-daemon
+```
+
+When set:
+- `/health` remains open without credentials for healthchecks.
+- All `/api/*` routes require `Authorization: Bearer <token>`.
+
+```bash
+curl -H "Authorization: Bearer your-secret-token" http://localhost:8799/api/agents
+```
+
 ---
 
 ### 2. Running the Web Frontend
@@ -91,6 +108,8 @@ Use `hub/tunnel.sh` to expose the local service to external devices securely.
 # Specify custom port (e.g. dev server port 5173)
 ./hub/tunnel.sh --cloudflare --port 5173
 ```
+
+> **Security Note**: When exposing via public tunnel, define `MOCHI_AUTH_TOKEN="<token>"` to require Bearer authentication on all `/api/*` endpoints while keeping `/health` available.
 
 #### Installing as PWA on Mobile Devices:
 

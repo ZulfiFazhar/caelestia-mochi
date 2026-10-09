@@ -44,11 +44,19 @@
     }
   }
 
-  function handleCommandSubmit(e: SubmitEvent) {
+  async function handleCommandSubmit(e: SubmitEvent) {
     e.preventDefault()
-    if (!commandInput.trim()) return
-    agentStore.sendCommand(commandInput)
+    const trimmed = commandInput.trim()
+    if (!trimmed) return
     commandInput = ''
+    agentStore.sendCommand(trimmed)
+    const args = trimmed.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g)?.map((arg) => arg.replace(/^['"]|['"]$/g, '')) || trimmed.split(/\s+/)
+    await agentStore.spawnSession(args)
+  }
+
+  async function handleQuickLaunch(harnessId: string) {
+    agentStore.launchHarness(harnessId)
+    await agentStore.spawnSession([harnessId])
   }
 
   const QUICK_HARNESSES = [
@@ -207,7 +215,7 @@
         {#each QUICK_HARNESSES as h}
           <button
             type="button"
-            onclick={() => agentStore.launchHarness(h.id)}
+            onclick={() => handleQuickLaunch(h.id)}
             class="inline-flex items-center gap-1 rounded-lg bg-surface-container-high px-2.5 py-1 text-[11px] font-mono text-on-surface hover:bg-surface-container-highest hover:text-primary transition cursor-pointer border border-outline-variant/30 active:scale-95 shrink-0"
           >
             <span>▶</span>

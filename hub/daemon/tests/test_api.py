@@ -68,6 +68,7 @@ def test_cors_headers():
     )
     assert response.status_code == 200
     assert response.headers.get("access-control-allow-origin") in ("*", "http://localhost:5173")
+    assert "access-control-allow-credentials" not in response.headers
 
 
 def test_events_stream_state_update():
@@ -116,3 +117,60 @@ async def test_lifespan_context():
         # Allow loop to tick briefly
         await asyncio.sleep(0.05)
     # Exited cleanly without exception
+
+
+def test_auth_token_protection(monkeypatch):
+    # Set MOCHI_AUTH_TOKEN
+    monkeypatch.setenv("MOCHI_AUTH_TOKEN", "supersecret123")
+
+    # /health stays open
+    health_resp = client.get("/health")
+    assert health_resp.status_code == 200
+
+    # /api/* requires token
+    unauth_resp = client.get("/api/agents")
+    assert unauth_resp.status_code == 401
+
+    wrong_resp = client.get("/api/agents", headers={"Authorization": "Bearer wrongtoken"})
+    assert wrong_resp.status_code == 401
+
+    # Valid Bearer token
+    ok_resp = client.get("/api/agents", headers={"Authorization": "Bearer supersecret123"})
+    assert ok_resp.status_code == 200
+
+    # Query token fallback
+    query_ok = client.get("/api/agents?token=supersecret123")
+    assert query_ok.status_code == 200
+
+    # OPTIONS preflight stays open
+    opt_resp = client.options("/api/agents", headers={"Origin": "http://localhost:5173", "Access-Control-Request-Method": "GET"})
+    assert opt_resp.status_code == 200
+
+
+def test_session_spawn_and_input_endpoints():
+    import sys
+    # Test POST /api/sessions
+    spawn_resp = client.post("/api/sessions", json={"command": [sys.executable, "-c", "input(); print('done')"]})
+    assert spawn_resp.status_code == 200
+    data = spawn_resp.json()
+    assert "session_id" in data
+    assert data["status"] == "spawned"
+    session_id = data["session_id"]
+
+    # Test GET /api/sessions and GET /api/sessions/{session_id}
+    list_resp = client.get("/api/sessions")
+    assert list_resp.status_code == 200
+    assert any(s["session_id"] == session_id for s in list_resp.json())
+
+    get_resp = client.get(f"/api/sessions/{session_id}")
+    assert get_resp.status_code == 200
+    assert get_resp.json()["session_id"] == session_id
+
+    # Test POST /api/sessions/{session_id}/input
+    input_resp = client.post(f"/api/sessions/{session_id}/input", json={"data": "hello\n"})
+    assert input_resp.status_code == 200
+    assert input_resp.json() == {"status": "ok"}
+
+    # Test 404 for input on non-existent session
+    bad_resp = client.post("/api/sessions/nonexistent-session/input", json={"data": "hi"})
+    assert bad_resp.status_code == 404

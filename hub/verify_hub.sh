@@ -146,6 +146,30 @@ if [[ "$APPROVAL_STATUS" != "200" ]]; then
 fi
 echo -e "  ${GREEN}✓${NC} POST /api/approvals/test-app-1 returned HTTP 200."
 
+# Test POST /api/sessions
+SESSION_JSON=$(curl -s -f -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"command": ["python3", "-c", "import sys; line = sys.stdin.readline(); print(\"echoed: \" + line)"]}' \
+  "http://127.0.0.1:${PORT}/api/sessions")
+SESSION_ID=$(python3 -c "import json, sys; print(json.loads(sys.argv[1])['session_id'])" "$SESSION_JSON")
+if [[ -z "$SESSION_ID" ]]; then
+  echo -e "${RED}Error: POST /api/sessions did not return session_id.${NC}" >&2
+  exit 1
+fi
+echo -e "  ${GREEN}✓${NC} POST /api/sessions spawned session $SESSION_ID."
+
+# Test POST /api/sessions/{session_id}/input
+INPUT_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"data": "hub-verify-test\n"}' \
+  "http://127.0.0.1:${PORT}/api/sessions/${SESSION_ID}/input")
+
+if [[ "$INPUT_STATUS" != "200" ]]; then
+  echo -e "${RED}Error: POST /api/sessions/${SESSION_ID}/input returned HTTP $INPUT_STATUS (expected 200).${NC}" >&2
+  exit 1
+fi
+echo -e "  ${GREEN}✓${NC} POST /api/sessions/${SESSION_ID}/input returned HTTP 200."
+
 # 6. Success
 echo "[6/6] All integration checks passed!"
 echo -e "${GREEN}✓ Mochi Hub End-to-End Verification SUCCESS${NC}"

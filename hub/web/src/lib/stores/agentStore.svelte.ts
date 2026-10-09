@@ -16,6 +16,7 @@ export interface AgentStoreOptions {
   fetchFn?: typeof fetch
   eventSourceFactory?: (url: string) => EventSource
   autoConnect?: boolean
+  authToken?: string
 }
 
 export class AgentStore {
@@ -29,6 +30,8 @@ export class AgentStore {
   timeline = $state<TimelineEntry[]>([])
   errorMessage = $state<string | null>(null)
   reconnectAttempts = $state<number>(0)
+  authToken: string | null = null
+  activeSessionId = $state<string | null>(null)
 
   private baseUrl: string
   private initialBackoffMs: number
@@ -45,6 +48,7 @@ export class AgentStore {
   private readonly onErrorListener = (_e: Event) => this.handleError()
   private readonly onStateUpdateListener = (e: MessageEvent) => this.handleStateUpdate(e)
   private readonly onApprovalRequestListener = (e: MessageEvent) => this.handleApprovalRequest(e)
+  private readonly onSessionOutputListener = (e: MessageEvent) => this.handleSessionOutput(e)
 
   constructor(options: AgentStoreOptions = {}) {
     this.baseUrl = options.baseUrl ?? ''
@@ -53,6 +57,7 @@ export class AgentStore {
     this.backoffFactor = options.backoffFactor ?? 2
     this.fetchFn = options.fetchFn ?? (typeof fetch !== 'undefined' ? fetch.bind(globalThis) : (null as any))
     this.eventSourceFactory = options.eventSourceFactory
+    this.authToken = options.authToken ?? ((globalThis as any).process?.env?.MOCHI_AUTH_TOKEN ?? null)
 
     if (options.autoConnect) {
       this.connect()
@@ -84,6 +89,7 @@ export class AgentStore {
       this.eventSource.removeEventListener('error', this.onErrorListener)
       this.eventSource.removeEventListener('state_update', this.onStateUpdateListener)
       this.eventSource.removeEventListener('approval_request', this.onApprovalRequestListener)
+      this.eventSource.removeEventListener('session_output', this.onSessionOutputListener)
       this.eventSource.close()
       this.eventSource = null
     }
@@ -122,7 +128,11 @@ export class AgentStore {
     // Initial REST state fetch
     this.fetchAgents().catch(() => {})
 
-    const sseEndpoint = customUrl ?? `${this.baseUrl}/api/events`
+    const sseEndpoint =
+      customUrl ??
+      (this.authToken
+        ? `${this.baseUrl}/api/events?token=${encodeURIComponent(this.authToken)}`
+        : `${this.baseUrl}/api/events`)
 
     try {
       let es: EventSource
@@ -140,6 +150,7 @@ export class AgentStore {
       es.addEventListener('error', this.onErrorListener)
       es.addEventListener('state_update', this.onStateUpdateListener)
       es.addEventListener('approval_request', this.onApprovalRequestListener)
+      es.addEventListener('session_output', this.onSessionOutputListener)
     } catch {
       this.scheduleReconnect()
     }
@@ -208,12 +219,44 @@ export class AgentStore {
   }
 
   /**
+   * Handle session_output SSE event.
+   */
+  private handleSessionOutput(e: MessageEvent): void {
+    try {
+      const parsed = typeof e.data === 'string' ? JSON.parse(e.data) : e.data
+      const sessionId = parsed.session_id ?? this.activeSessionId ?? 'Session'
+      const outputText = typeof parsed.data === 'string' ? parsed.data : JSON.stringify(parsed.data)
+      if (outputText) {
+        this.addTimelineEntry({
+          type: 'terminal',
+          text: outputText,
+          sender: sessionId,
+        })
+      }
+    } catch (err) {
+      console.warn('Failed to parse session_output event:', err)
+    }
+  }
+
+  private getRequestHeaders(): Record<string, string> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (this.authToken) {
+      headers['Authorization'] = `Bearer ${this.authToken}`
+    }
+    return headers
+  }
+
+  /**
    * Initial or periodic REST fetch of system agents state.
    */
   public async fetchAgents(): Promise<SystemState | null> {
     if (!this.fetchFn) return null
     try {
-      const res = await this.fetchFn(`${this.baseUrl}/api/agents`)
+      const headers: Record<string, string> = {}
+      if (this.authToken) {
+        headers['Authorization'] = `Bearer ${this.authToken}`
+      }
+      const res = await this.fetchFn(`${this.baseUrl}/api/agents`, { headers })
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`)
       }
@@ -284,7 +327,7 @@ export class AgentStore {
     try {
       const res = await this.fetchFn(`${this.baseUrl}/api/approvals/${approvalId}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: this.getRequestHeaders(),
         body: JSON.stringify({ approved, reason }),
       })
 
@@ -391,6 +434,60 @@ export class AgentStore {
    */
   public launchHarness(harnessId: string): void {
     this.sendCommand(`launch ${harnessId}`)
+  }
+
+  /**
+   * Spawn a PTY session via POST /api/sessions.
+   */
+  public async spawnSession(command: string[]): Promise<string | null> {
+    if (!this.fetchFn) return null
+    try {
+      const res = await this.fetchFn(`${this.baseUrl}/api/sessions`, {
+        method: 'POST',
+        headers: this.getRequestHeaders(),
+        body: JSON.stringify({ command }),
+      })
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`)
+      }
+      const data = await res.json()
+      const sessionId: string = data.session_id
+      this.activeSessionId = sessionId
+      this.mochiState = 'working'
+      this.addTimelineEntry({
+        type: 'system',
+        text: `Session spawned: ${sessionId} (${command.join(' ')})`,
+      })
+      return sessionId
+    } catch (err) {
+      console.error('Failed to spawn session:', err)
+      this.addTimelineEntry({
+        type: 'system',
+        text: `Failed to spawn session: ${command.join(' ')}`,
+      })
+      return null
+    }
+  }
+
+  /**
+   * Send text input to an active session via POST /api/sessions/{session_id}/input.
+   */
+  public async sendInput(sessionId: string, input: string): Promise<boolean> {
+    if (!this.fetchFn) return false
+    try {
+      const res = await this.fetchFn(`${this.baseUrl}/api/sessions/${sessionId}/input`, {
+        method: 'POST',
+        headers: this.getRequestHeaders(),
+        body: JSON.stringify({ data: input }),
+      })
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`)
+      }
+      return true
+    } catch (err) {
+      console.error('Failed to send input to session:', err)
+      return false
+    }
   }
 }
 

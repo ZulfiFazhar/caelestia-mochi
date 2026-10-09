@@ -21,6 +21,8 @@
   let isSubmitting = $state(false)
   let showReasonField = $state(false)
   let denialReason = $state('')
+  let timedOut = $state(false)
+  let timeoutHandled = $state(false)
 
   // Calculate initial remaining seconds from timestamp if present
   const getInitialRemaining = () => {
@@ -32,14 +34,28 @@
 
   let remaining = $state(getInitialRemaining())
 
+  async function triggerTimeout() {
+    if (timeoutHandled) return
+    timeoutHandled = true
+    timedOut = true
+    await handleDeny('Request timed out')
+  }
+
   // Countdown timer with clean interval teardown
   $effect(() => {
     remaining = getInitialRemaining()
-    if (remaining <= 0) return
+    if (remaining <= 0) {
+      triggerTimeout()
+      return
+    }
 
     const interval = setInterval(() => {
       if (remaining > 0) {
         remaining -= 1
+        if (remaining <= 0) {
+          clearInterval(interval)
+          triggerTimeout()
+        }
       } else {
         clearInterval(interval)
       }
@@ -65,7 +81,7 @@
   )
 
   async function handleAllow() {
-    if (isSubmitting || remaining <= 0) return
+    if (isSubmitting || remaining <= 0 || timedOut) return
     isSubmitting = true
     try {
       await onAllow?.(approval.approval_id)
@@ -74,11 +90,11 @@
     }
   }
 
-  async function handleDeny() {
+  async function handleDeny(reason?: string) {
     if (isSubmitting) return
     isSubmitting = true
     try {
-      await onDeny?.(approval.approval_id, denialReason.trim())
+      await onDeny?.(approval.approval_id, reason ?? denialReason.trim())
     } finally {
       isSubmitting = false
     }
@@ -167,12 +183,25 @@
       </div>
     {/if}
 
+    <!-- Timeout Notification Banner -->
+    {#if timedOut}
+      <div
+        class="rounded-xl bg-error/15 border border-error/40 px-3.5 py-2.5 text-xs text-error font-medium flex items-center gap-2"
+        role="alert"
+      >
+        <svg class="w-4 h-4 shrink-0 text-error" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
+        <span>Request timed out and was automatically denied.</span>
+      </div>
+    {/if}
+
     <!-- Action Buttons (Review Focus 3: Green Allow, Red Deny) -->
     <div class="flex items-center gap-2.5 pt-1">
       <!-- Green Allow Button -->
       <button
         type="button"
-        disabled={isSubmitting || remaining <= 0}
+        disabled={isSubmitting || remaining <= 0 || timedOut}
         onclick={handleAllow}
         class="flex-1 inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs sm:text-sm font-bold text-black transition-all shadow-md cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-110 active:scale-98"
         style="background-color: var(--color-success, #4ade80);"
@@ -186,8 +215,8 @@
       <!-- Red Deny Button -->
       <button
         type="button"
-        disabled={isSubmitting}
-        onclick={handleDeny}
+        disabled={isSubmitting || timedOut}
+        onclick={() => handleDeny()}
         class="flex-1 inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs sm:text-sm font-bold text-white transition-all shadow-md cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-110 active:scale-98"
         style="background-color: var(--color-error-container, #93000a); border: 1px solid var(--color-error, #ffb4ab);"
       >

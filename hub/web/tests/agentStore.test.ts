@@ -299,6 +299,83 @@ describe('AgentStore (Svelte 5 Runes)', () => {
     store.destroy()
   })
 
+  it('spawns session and sends input via REST endpoints', async () => {
+    let capturedSpawnUrl = ''
+    let capturedSpawnBody: any = null
+    let capturedInputUrl = ''
+    let capturedInputBody: any = null
+    let capturedHeaders: any = null
+
+    const mockFetch = async (url: string, opts?: any) => {
+      if (url.includes('/api/sessions') && !url.includes('/input')) {
+        capturedSpawnUrl = url
+        capturedSpawnBody = JSON.parse(opts.body)
+        capturedHeaders = opts.headers
+        return {
+          ok: true,
+          json: async () => ({ session_id: 'session-xyz', status: 'spawned' }),
+        } as any
+      }
+      if (url.includes('/input')) {
+        capturedInputUrl = url
+        capturedInputBody = JSON.parse(opts.body)
+        return {
+          ok: true,
+          json: async () => ({ status: 'ok' }),
+        } as any
+      }
+      return { ok: true, json: async () => ({}) } as any
+    }
+
+    const store = createAgentStore({
+      baseUrl: 'http://localhost:8799',
+      fetchFn: mockFetch as any,
+      autoConnect: false,
+      authToken: 'test-token-456',
+    })
+
+    const sid = await store.spawnSession(['echo', 'hello'])
+    expect(sid).toBe('session-xyz')
+    expect(capturedSpawnUrl).toBe('http://localhost:8799/api/sessions')
+    expect(capturedSpawnBody).toEqual({ command: ['echo', 'hello'] })
+    expect(capturedHeaders['Authorization']).toBe('Bearer test-token-456')
+    expect(store.timeline.some((t) => t.text.includes('Session spawned: session-xyz'))).toBe(true)
+
+    const inputOk = await store.sendInput('session-xyz', 'test data\n')
+    expect(inputOk).toBe(true)
+    expect(capturedInputUrl).toBe('http://localhost:8799/api/sessions/session-xyz/input')
+    expect(capturedInputBody).toEqual({ data: 'test data\n' })
+
+    store.destroy()
+  })
+
+  it('streams session output SSE into timeline', () => {
+    let mockEs: MockEventSource | null = null
+    const store = createAgentStore({
+      baseUrl: 'http://localhost:8799',
+      eventSourceFactory: (url) => {
+        mockEs = new MockEventSource(url)
+        return mockEs as any
+      },
+      autoConnect: true,
+      authToken: 'token123',
+    })
+
+    expect(mockEs!.url).toContain('token=token123')
+
+    mockEs!.emit('session_output', JSON.stringify({
+      session_id: 'session-abc',
+      data: 'Process output line 1\nProcess output line 2',
+    }))
+
+    const terminalEntry = store.timeline.find((t) => t.sender === 'session-abc')
+    expect(terminalEntry).toBeDefined()
+    expect(terminalEntry?.type).toBe('terminal')
+    expect(terminalEntry?.text).toBe('Process output line 1\nProcess output line 2')
+
+    store.destroy()
+  })
+
   it('exports valid UI components for the dashboard', () => {
     expect(ApprovalCard).toBeDefined()
     expect(AgentRoster).toBeDefined()

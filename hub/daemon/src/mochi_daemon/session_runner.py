@@ -67,11 +67,14 @@ class PtySessionManager:
         broadcaster: Any | None = None,
         loop: asyncio.AbstractEventLoop | None = None,
         on_approval: Callable[[dict[str, Any]], Any] | None = None,
+        approval_timeout: float | None = 60.0,
     ) -> None:
         self.broadcaster = broadcaster
         self.on_approval = on_approval
+        self.approval_timeout = approval_timeout
         self._sessions: dict[str, _Session] = {}
         self._approvals: dict[str, dict[str, Any]] = {}
+        self._approval_timers: dict[str, threading.Timer] = {}
         self._lock = threading.Lock()
 
         try:
@@ -206,6 +209,15 @@ class PtySessionManager:
         with self._lock:
             return [dict(a) for a in self._approvals.values() if not a.get("resolved")]
 
+    def _handle_approval_timeout(self, approval_id: str) -> None:
+        with self._lock:
+            self._approval_timers.pop(approval_id, None)
+            appr = self._approvals.get(approval_id)
+            if not appr or appr.get("resolved"):
+                return
+        logger.info(f"Approval {approval_id} timed out; auto-denying.")
+        self.submit_approval(approval_id, approved=False)
+
     def submit_approval(
         self,
         approval_id: str,
@@ -213,6 +225,9 @@ class PtySessionManager:
         response_text: str | None = None,
     ) -> bool:
         with self._lock:
+            timer = self._approval_timers.pop(approval_id, None)
+            if timer:
+                timer.cancel()
             approval = self._approvals.get(approval_id)
             if not approval or approval.get("resolved"):
                 return False
@@ -257,6 +272,11 @@ class PtySessionManager:
     def terminate_session(self, session_id: str, force: bool = False) -> None:
         with self._lock:
             session = self._sessions.get(session_id)
+            for aid, appr in list(self._approvals.items()):
+                if appr.get("session_id") == session_id:
+                    timer = self._approval_timers.pop(aid, None)
+                    if timer:
+                        timer.cancel()
         if not session:
             return
 
@@ -292,6 +312,9 @@ class PtySessionManager:
 
     def terminate_all(self) -> None:
         with self._lock:
+            for timer in self._approval_timers.values():
+                timer.cancel()
+            self._approval_timers.clear()
             session_ids = list(self._sessions.keys())
         for sid in session_ids:
             self.terminate_session(sid, force=True)
@@ -326,6 +349,7 @@ class PtySessionManager:
                                 with session.lock:
                                     session.output += text
                                 self._check_approval(session)
+                                self._notify_output(session.session_id, text)
                         except OSError:
                             pass
                         break
@@ -339,6 +363,7 @@ class PtySessionManager:
                 with session.lock:
                     session.output += text
                 self._check_approval(session)
+                self._notify_output(session.session_id, text)
             except (OSError, select.error):
                 break
             except Exception as e:
@@ -379,8 +404,47 @@ class PtySessionManager:
                     session.pending_approval = approval_info
                 with self._lock:
                     self._approvals[approval_id] = approval_info
+                    if self.approval_timeout and self.approval_timeout > 0:
+                        timer = threading.Timer(
+                            self.approval_timeout,
+                            self._handle_approval_timeout,
+                            args=(approval_id,),
+                        )
+                        timer.daemon = True
+                        timer.start()
+                        self._approval_timers[approval_id] = timer
                 self._notify_approval(approval_info)
                 break
+
+    def _notify_output(self, session_id: str, data: str) -> None:
+        if not self.broadcaster:
+            return
+        try:
+            loop = self.loop
+            if loop is None or loop.is_closed():
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    loop = None
+
+            if hasattr(self.broadcaster, "broadcast_session_output"):
+                coro = self.broadcaster.broadcast_session_output(session_id, data)
+            else:
+                coro = self.broadcaster.broadcast("session_output", {"session_id": session_id, "data": data})
+
+            if loop is not None and loop.is_running():
+                asyncio.run_coroutine_threadsafe(coro, loop)
+            else:
+                try:
+                    cur_loop = asyncio.get_event_loop()
+                    if cur_loop.is_running():
+                        asyncio.run_coroutine_threadsafe(coro, cur_loop)
+                    else:
+                        cur_loop.run_until_complete(coro)
+                except Exception:
+                    asyncio.run(coro)
+        except Exception as e:
+            logger.debug(f"Error broadcasting session output: {e}")
 
     def _notify_approval(self, approval_info: dict[str, Any]) -> None:
         if self.on_approval:

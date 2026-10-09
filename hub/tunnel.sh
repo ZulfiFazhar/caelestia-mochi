@@ -20,6 +20,9 @@ Options:
   -p, --port <port>   Local port to expose (default: 8799)
   -h, --help          Show this help message
 
+Environment Variables:
+  MOCHI_AUTH_TOKEN    Optional bearer token required on /api/* routes (/health stays open)
+
 Examples:
   ./hub/tunnel.sh --cloudflare
   ./hub/tunnel.sh --tailscale
@@ -62,6 +65,12 @@ if [[ -z "$MODE" ]]; then
   echo "" >&2
   print_usage
   exit 1
+fi
+
+if [[ -n "${MOCHI_AUTH_TOKEN:-}" ]]; then
+  echo "Auth: MOCHI_AUTH_TOKEN is active. Remote clients must provide Bearer authentication."
+else
+  echo "Security Note: MOCHI_AUTH_TOKEN is unset. Set MOCHI_AUTH_TOKEN to secure /api/* endpoints."
 fi
 
 if [[ "$MODE" == "cloudflare" ]]; then
