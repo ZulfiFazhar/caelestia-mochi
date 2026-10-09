@@ -22,6 +22,9 @@ dev = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[project.scripts]
+mochi-daemon = "mochi_daemon.main:main"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/mochi_daemon"]
 
