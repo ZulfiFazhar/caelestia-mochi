@@ -11,6 +11,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from mochi_daemon.models import SystemState
 from mochi_daemon.monitor import AgentMonitorService
+from mochi_daemon.session_runner import PtySessionManager
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,7 @@ class EventBroadcaster:
 
 monitor_service = AgentMonitorService()
 broadcaster = EventBroadcaster()
+session_manager = PtySessionManager(broadcaster=broadcaster)
 recorded_approvals: dict[str, Any] = {}
 approval_hooks: list[Callable[[str, bool, str], Any]] = []
 
@@ -139,6 +141,7 @@ async def submit_approval(
         "approved": approved,
         "reason": reason,
     }
+    session_manager.submit_approval(approval_id, approved)
     for hook in approval_hooks:
         try:
             hook(approval_id, approved, reason)

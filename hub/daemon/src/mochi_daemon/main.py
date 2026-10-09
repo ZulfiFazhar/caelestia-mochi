@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from mochi_daemon.api import broadcaster, monitor_service, router
+from mochi_daemon.api import broadcaster, monitor_service, router, session_manager
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +36,7 @@ async def lifespan(app: FastAPI):
             await task
         except asyncio.CancelledError:
             pass
+        session_manager.terminate_all()
 
 
 def create_app() -> FastAPI:
