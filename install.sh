@@ -42,13 +42,31 @@ FILES=(
     "utils/scripts/test_agent_monitor.py"
 )
 
+USE_SYMLINK=false
+for arg in "$@"; do
+    case "$arg" in
+        --link|-l)
+            USE_SYMLINK=true
+            ;;
+    esac
+done
+
 if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/src/modules/dashboard/AgentTab.qml" ]; then
-    echo -e "${GREEN}:: Copying files from local repository...${RESET}"
-    for f in "${FILES[@]}"; do
-        mkdir -p "$(dirname "$TARGET_CONFIG/$f")"
-        cp "$SCRIPT_DIR/src/$f" "$TARGET_CONFIG/$f"
-        echo "   -> Installed $f"
-    done
+    if [ "$USE_SYMLINK" = true ]; then
+        echo -e "${GREEN}:: Symlinking files from local repository (dev mode)...${RESET}"
+        for f in "${FILES[@]}"; do
+            mkdir -p "$(dirname "$TARGET_CONFIG/$f")"
+            ln -sf "$SCRIPT_DIR/src/$f" "$TARGET_CONFIG/$f"
+            echo "   -> Linked $f"
+        done
+    else
+        echo -e "${GREEN}:: Copying files from local repository...${RESET}"
+        for f in "${FILES[@]}"; do
+            mkdir -p "$(dirname "$TARGET_CONFIG/$f")"
+            cp "$SCRIPT_DIR/src/$f" "$TARGET_CONFIG/$f"
+            echo "   -> Installed $f"
+        done
+    fi
 else
     echo -e "${GREEN}:: Downloading files from GitHub...${RESET}"
     for f in "${FILES[@]}"; do

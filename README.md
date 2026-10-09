@@ -55,6 +55,8 @@ cd caelestia-mochi
 ./install.sh
 ```
 
+> **Developer Mode:** Use `./install.sh --link` (or `-l`) to symlink files from the repository to your config directory so edits sync directly with git.
+
 ---
 
 ## ⌨️ Usage
