@@ -48,6 +48,36 @@ export interface SystemState {
   mochi_state: MochiState
 }
 
+export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting'
+
+export interface TimelineEntry {
+  id: string
+  timestamp: number
+  type: 'system' | 'agent' | 'user' | 'terminal' | 'approval'
+  text: string
+  sender?: string
+  status?: string
+}
+
+/**
+ * Maps raw agent status string to valid MochiState.
+ */
+export function statusToMochiState(status?: string): MochiState {
+  if (!status) return 'idle'
+  const s = status.toLowerCase()
+  if (['working', 'busy', 'run', 'running'].includes(s)) return 'working'
+  if (['thinking', 'reasoning'].includes(s)) return 'thinking'
+  if (['searching', 'grep', 'glob'].includes(s)) return 'searching'
+  if (['approval', 'waiting', 'confirm', 'prompt'].includes(s)) return 'approval'
+  if (['question', 'ask'].includes(s)) return 'question'
+  if (['error', 'failed'].includes(s)) return 'error'
+  if (['done', 'finished', 'completed', 'success'].includes(s)) return 'done'
+  if (['sleeping', 'stopped', 'inactive'].includes(s)) return 'sleeping'
+  if (['dizzy'].includes(s)) return 'dizzy'
+  if (['ratelimit', 'throttled'].includes(s)) return 'ratelimit'
+  return 'idle'
+}
+
 export interface MochiBotProps {
   state?: MochiState
   eyeShape?: EyeShape
