@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+@theme {
+  --color-surface: #131317;
+  --color-surface-dim: #131317;
+  --color-surface-bright: #39393d;
+  --color-surface-container-lowest: #0e0e12;
+  --color-surface-container-low: #1b1b1f;
+  --color-surface-container: #1f1f23;
+  --color-surface-container-high: #2a2a2e;
+  --color-surface-container-highest: #353438;
+  --color-surface-variant: #46464f;
+  --color-on-surface: #e4e1e7;
+  --color-on-surface-variant: #c6c5d1;
+  --color-inverse-surface: #e4e1e7;
+  --color-inverse-on-surface: #303034;
+  --color-outline: #90909a;
+  --color-outline-variant: #46464f;
+
+  --color-primary: #bac3ff;
+  --color-on-primary: #232c60;
+  --color-primary-container: #6a73ac;
+  --color-on-primary-container: #ffffff;
+
+  --color-secondary: #c3c5e0;
+  --color-on-secondary: #2c2f44;
+  --color-secondary-container: #42455c;
+  --color-on-secondary-container: #b1b3ce;
+
+  --color-tertiary: #f1b3e5;
+  --color-on-tertiary: #4c1f48;
+  --color-tertiary-container: #b77ead;
+  --color-on-tertiary-container: #000000;
+
+  --color-error: #ffb4ab;
+  --color-on-error: #690005;
+  --color-error-container: #93000a;
+  --color-on-error-container: #ffdad6;
+
+  --color-success: #4ade80;
+  --color-warning: #f5a524;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background-color: #131317;
+  color: #e4e1e7;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  min-height: 100vh;
+}
