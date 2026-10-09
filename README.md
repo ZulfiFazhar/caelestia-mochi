@@ -1,8 +1,10 @@
 # Caelestia Mochi Agent
 
-Real-time coding agent dashboard monitor and animated **Coucou Mochi** companion for [Caelestia Hyprland](https://github.com/caelestia-dots/caelestia).
+Real-time coding agent dashboard monitor and animated **Mochi** companion for [Caelestia Hyprland](https://github.com/caelestia-dots/caelestia), inspired by [coucou](https://github.com/Louis-CFM/coucou).
 
 Built with native **Quickshell** (QML) and follows Caelestia's dynamic Material Design 3 theme system (`scheme.json`).
+
+![Caelestia Mochi Agent](assets/screenshot.png)
 
 ---
 
@@ -42,7 +44,7 @@ Built with native **Quickshell** (QML) and follows Caelestia's dynamic Material 
 ### Method 1: One-liner (Curl)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ZulfiFazhar/caelestia-mochi/main/install.sh | bash
+curl -fsSL https://go.zulfifazhar.dev/caelestia-mochi | bash
 ```
 
 ### Method 2: Git Clone
@@ -74,7 +76,7 @@ cd caelestia-mochi
 Or run directly via curl:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ZulfiFazhar/caelestia-mochi/main/uninstall.sh | bash
+curl -fsSL https://go.zulfifazhar.dev/caelestia-mochi-uninstall | bash
 ```
 
 ---
@@ -85,6 +87,12 @@ curl -fsSL https://raw.githubusercontent.com/ZulfiFazhar/caelestia-mochi/main/un
 - [Quickshell](https://quickshell.outfoxxed.me/) (`quickshell-git` / `qs`)
 - `caelestia-shell` or Caelestia dotfiles (`~/.config/quickshell/caelestia`)
 - `python3` (with standard library `sqlite3`, `json`, `subprocess`)
+
+---
+
+## 🙏 Credits
+
+- Inspired by [coucou](https://github.com/Louis-CFM/coucou) by [@Louis-CFM](https://github.com/Louis-CFM).
 
 ---
 
