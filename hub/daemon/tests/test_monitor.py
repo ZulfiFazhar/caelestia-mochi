@@ -140,11 +140,17 @@ def test_tick_delta_calculation():
     service = AgentMonitorService()
     now = time.time()
     service._tick_cache["9999"] = {"ticks": 1000, "time": now - 1.0}
-    prev = service._tick_cache["9999"]
-    dt = max(0.001, now - prev["time"])
-    dticks = max(0, 1100 - prev["ticks"])
-    inst_cpu = (dticks / 100.0) / dt * 100.0
+    inst_cpu = service.calculate_cpu_delta(pid=9999, current_ticks=1100, now=now)
     assert pytest.approx(inst_cpu, rel=1e-2) == 100.0
+
+
+def test_tick_cache_prunes_dead_pids():
+    service = AgentMonitorService(cache_file=None)
+    service._tick_cache = {"9999999": {"ticks": 50, "time": time.time()}}
+    # When get_system_state runs, terminated/absent pid 9999999 is pruned
+    service.get_system_state()
+    assert "9999999" not in service._tick_cache
+
 
 
 def test_descendants_cycle_handling():

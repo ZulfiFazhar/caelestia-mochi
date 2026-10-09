@@ -307,6 +307,15 @@ class AgentMonitorService:
                 except Exception:
                     pass
 
+    def calculate_cpu_delta(self, pid: int | str, current_ticks: int, now: float) -> float:
+        pid_key = str(pid)
+        if pid_key in self._tick_cache:
+            prev = self._tick_cache[pid_key]
+            dt = max(0.001, now - prev.get("time", now))
+            dticks = max(0, current_ticks - prev.get("ticks", current_ticks))
+            return (dticks / 100.0) / dt * 100.0
+        return 0.0
+
     def _determine_instance_state(
         self,
         target_id: str,
@@ -422,10 +431,7 @@ class AgentMonitorService:
 
                 pid_key = str(pid)
                 if pid_key in self._tick_cache:
-                    prev = self._tick_cache[pid_key]
-                    dt = max(0.001, now_s - prev.get("time", now_s))
-                    dticks = max(0, tree_ticks - prev.get("ticks", tree_ticks))
-                    inst_cpu = (dticks / 100.0) / dt * 100.0
+                    inst_cpu = self.calculate_cpu_delta(pid, tree_ticks, now_s)
                 else:
                     t1 = tree_ticks
                     time.sleep(0.035)
@@ -492,7 +498,8 @@ class AgentMonitorService:
             )
             agents.append(agent_info)
 
-        self._tick_cache.update(new_cache)
+        # Prune terminated PIDs absent from current poll cycle
+        self._tick_cache = new_cache
         if self.cache_file:
             try:
                 with open(self.cache_file, "w") as f:
